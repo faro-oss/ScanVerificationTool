@@ -1,0 +1,23 @@
+name: svt
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - certifi
+  - pip
+  - python=3.7
+  - setuptools
+  - pip:
+    - altgraph==0.16.1
+    - appdirs==1.4.3
+    - fpdf==1.7.2
+    - future==0.17.1
+    - lazy-object-proxy==1.4.2
+    - macholib==1.11
+    - olefile==0.46
+    - pefile==2019.4.18
+    - pycryptodomex==3.9.0
+    - pyinstaller==3.5
+    - pyqt5==5.13.0
+    - pyqt5-sip==4.19.18
+    - pywin32-ctypes==0.2.0

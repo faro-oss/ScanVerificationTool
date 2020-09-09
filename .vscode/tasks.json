@@ -1,0 +1,110 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Mac UI",
+            "dependsOn": ["Build Mac UI Report"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "isBackground": false
+        },
+        {
+            "label": "Build UI",
+            "dependsOn": ["Build UI Report"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "isBackground": false
+        },
+        {
+            "label": "Build Mac UI Main",
+            "type": "shell",
+            "command": "conda",
+            "args": [
+                "run",
+                "-n",
+                "svt",
+                "python",
+                "-m",
+                "PyQt5.uic.pyuic",
+                "-x",
+                "src/ui/hash_verify.mac.ui", 
+                "-o",
+                "src/ui_gen/ui_layout.py"
+            ],
+            "isBackground": false,
+        },
+        {
+            "label": "Build Mac UI Report",
+            "dependsOn": "Build Mac UI Main",
+            "type": "shell",
+            "command": "conda",
+            "args": [
+                "run",
+                "-n",
+                "svt",
+                "python",
+                "-m",
+                "PyQt5.uic.pyuic",
+                "-x",
+                "src/ui/report_dialog.mac.ui", 
+                "-o",
+                "src/ui_gen/ui_report_dialog.py"
+            ],
+            "isBackground": false,
+        },
+{
+            "label": "Build UI Main",
+            "type": "shell",
+            "command": "conda",
+            "args": [
+                "run",
+                "-n",
+                "svt",
+                "python",
+                "-m",
+                "PyQt5.uic.pyuic",
+                "-x",
+                "src/ui/hash_verify.ui", 
+                "-o",
+                "src/ui_gen/ui_layout.py"
+            ],
+            "isBackground": false,
+        },
+        {
+            "label": "Build UI Report",
+            "dependsOn": "Build UI Main",
+            "type": "shell",
+            "command": "conda",
+            "args": [
+                "run",
+                "-n",
+                "svt",
+                "python",
+                "-m",
+                "PyQt5.uic.pyuic",
+                "-x",
+                "src/ui/report_dialog.ui", 
+                "-o",
+                "src/ui_gen/ui_report_dialog.py"
+            ],
+            "isBackground": false,
+        },
+        {
+            "label": "Run SVT",
+            "type": "shell",
+            "command": "conda",
+            "args": [
+                "run",
+                "-n",
+                "svt",
+                "python",
+                "src/hash_verify.py"
+            ],
+            "isBackground": false,
+        }
+    ]
+}

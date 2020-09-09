@@ -1,45 +1,43 @@
-**Edit a file, create a new file, and clone from Bitbucket in under 2 minutes**
+## Introduction
+This repository contains the source code of the FARO Scan Verification Tool that 
+allows to verify the digital scan signature created by the scanner and thus check
+whether the scan data has been manipulated since the scanner finalized the scan.
 
-When you're done, you can delete the content in this README and update the file with details for others getting started with your repository.
-
-*We recommend that you open this README in another tab as you perform the tasks below. You can [watch our video](https://youtu.be/0ocf7u76WSo) for a full demo of all the steps in this tutorial. Open the video in a new tab to avoid leaving Bitbucket.*
-
----
-
-## Edit a file
-
-You’ll start by editing this README file to learn how to edit a file in Bitbucket.
-
-1. Click **Source** on the left side.
-2. Click the README.md link from the list of files.
-3. Click the **Edit** button.
-4. Delete the following text: *Delete this line to make a change to the README from Bitbucket.*
-5. After making your change, click **Commit** and then **Commit** again in the dialog. The commit page will open and you’ll see the change you just made.
-6. Go back to the **Source** page.
+The tool is released open source. The latest released version can be downloaded 
+from the [FARO 3D App Center](https://3d-apps.faro-europe.com/product/faro-scan-verification-tool/)
 
 ---
 
-## Create a file
+## License
 
-Next, you’ll add a new file to this repository.
+The Scan Verification Tool is distributed under the GNU General Public License (GPL) version3. You can view the license terms in the file [LICENSE](LICENSE). 
 
-1. Click the **New file** button at the top of the **Source** page.
-2. Give the file a filename of **contributors.txt**.
-3. Enter your name in the empty file space.
-4. Click **Commit** and then **Commit** again in the dialog.
-5. Go back to the **Source** page.
-
-Before you move on, go ahead and explore the repository. You've already seen the **Source** page, but check out the **Commits**, **Branches**, and **Settings** pages.
+The license terms of used third-party components are available in the subrirectory [licenses](licenses).
 
 ---
 
-## Clone a repository
+## Prerequisites
 
-Use these steps to clone from SourceTree, our client for using the repository command-line free. Cloning allows you to work on your files locally. If you don't yet have SourceTree, [download and install first](https://www.sourcetreeapp.com/). If you prefer to clone from the command line, see [Clone a repository](https://confluence.atlassian.com/x/4whODQ).
+Install [Miniconda](https://docs.conda.io/en/latest/miniconda.html)<br>
+All dependencies are in environment.yml and can be installed via conda.
 
-1. You’ll see the clone button under the **Source** heading. Click that button.
-2. Now click **Check out in SourceTree**. You may need to create a SourceTree account or log in.
-3. When you see the **Clone New** dialog in SourceTree, update the destination path and name if you’d like to and then click **Clone**.
-4. Open the directory you just created to see your repository’s files.
+---
 
-Now that you're more familiar with your Bitbucket repository, go ahead and add a new file locally. You can [push your change back to Bitbucket with SourceTree](https://confluence.atlassian.com/x/iqyBMg), or you can [add, commit,](https://confluence.atlassian.com/x/8QhODQ) and [push from the command line](https://confluence.atlassian.com/x/NQ0zDQ).
+## How to get started
+You should use conda to create a virtual environment for development.<br>
+As this is a GPL Project, you can use [PyCharm Community Edition](https://www.jetbrains.com/pycharm/download) to develop.<br>
+In PyCharm, [create a Conda Virtual Environment](https://www.jetbrains.com/help/pycharm-edu/conda-support-creating-conda-virtual-environment.html)
+; the name will default to the project directory name.
+Now, update the virtual environment, based on environment.yml.
+`$ conda env update environment.yml`<br>
+
+Also, the Scrips in build_scripts have to be started from the project root folder.
+
+Assuming, the environment name is svt
+
+##### Compile the Qt5 dialogue files
+`$ conda run python -m PyQt5.uic.pyuic -x src/report_dialog.ui -o src/ui_report_dialog.py`<br>
+`$ conda run python -m PyQt5.uic.pyuic -x src/hash_verify.ui -o src/ui_layout.py`
+
+##### Run the code
+`$ conda run src/hash_verify.py`
