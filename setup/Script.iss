@@ -66,7 +66,7 @@ Name: "{commondesktop}\FARO Scan Verification Tool";  Filename: "{app}\{#AppExe}
 
 [Setup]
 WizardImageFile=images\installer_main_164x314.bmp
-WizardSmallImageFile=images\FARO.bmp
+WizardSmallImageFile=images\SVT_icon.bmp
 WizardImageStretch=No
 CloseApplications=Yes
 

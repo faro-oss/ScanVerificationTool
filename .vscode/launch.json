@@ -9,7 +9,10 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/hash_verify.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": [
+                "-d"
+            ],
         },
         {
             "name": "Build SVT Mac",
@@ -51,34 +54,6 @@
             "request": "launch",
             "module": "enter-your-module-name-here",
             "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Django",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/manage.py",
-            "console": "integratedTerminal",
-            "args": [
-                "runserver",
-                "--noreload",
-                "--nothreading"
-            ],
-            "django": true
-        },
-        {
-            "name": "Python: Flask",
-            "type": "python",
-            "request": "launch",
-            "module": "flask",
-            "env": {
-                "FLASK_APP": "app.py"
-            },
-            "args": [
-                "run",
-                "--no-debugger",
-                "--no-reload"
-            ],
-            "jinja": true
         },
         {
             "name": "Python: Current File (External Terminal)",

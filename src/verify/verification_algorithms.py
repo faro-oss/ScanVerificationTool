@@ -23,11 +23,13 @@ import typing
 import olefile
 from enum import Enum, auto, unique
 from Cryptodome.Hash import SHA1 as cryptoSHA
+from Cryptodome.Hash import SHA256 as cryptoSHAv2
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_PSS
 from PyQt5 import QtCore
 
 from .functions import does_spl_exist
+from .sfm import *
 
 """
 for signature verification
@@ -43,6 +45,8 @@ SIGNATURE = "SHA256SUM.sig"
 CLASSID = b"\x90\xEF\x56\x6A\x20\x2D\xD5\x11\xAE\x96\x00\x50\xFC\x0D\xBD\xBD"
 MAIN_PARAM_STREAM = "Main"
 SCANS_SUBFOLDER = "Scans"
+LSDATAV2_SCANDATA_SUBFOLDER = "ScanData"
+LSDATAV2_VERSION_FILE = "Version"
 
 SWIFT_SEQ_ID = "SwiftSequenceId"
 SWIFT_HASH_LIST = "SwiftPrevHashes"
@@ -368,8 +372,73 @@ def hash_data(data):
     return hasher.hexdigest()
 
 
-def is_scan_verifyable(path):
+
+def is_scan_verifyable(path: str) -> bool:
     return is_hashed_scan(path) or scan_count(path, check_any=True)
+
+def ole_contains_stream(ole_path: str, stream: str) -> bool:
+    """ For a given path, if it represents an OLE file,
+        checks presence of a stream `stream` inside it.
+    """
+    try:
+        if olefile.isOleFile(ole_path):
+            with olefile.OleFileIO(ole_path) as ole:
+                return ole.exists(stream)
+    except EnvironmentError as error:
+        logger.warning("Error when opening OLE file {1}: {0}".format(str(error), ole_path))
+    return False
+
+def is_swift_scan(path: str) -> typing.Optional[str]:
+    """ For a given path, checks whether the path represents a scan
+        belonging to a Swift sequence.
+        Returns the Swift sequence ID if the scan belongs to a sequence,
+        otherwise `None`.
+    """
+    if os.path.isdir(path):
+        seq_file =  os.path.normpath(os.path.join(path, SWIFT_SEQ_ID))
+        if os.path.exists(seq_file):
+            return extract_swift_seq_id(seq_file)
+    else:
+        if ole_contains_stream(path, SWIFT_SEQ_ID):
+            with olefile.OleFileIO(path) as ole:
+                return extract_swift_seq_id(ole.openstream(SWIFT_SEQ_ID))
+    return None
+
+def is_last_scan_in_swift_seq(path: str, seq_id: str = "") -> bool:
+    """ Checks whether the scan specified by a given path is the last scan
+        of a Swift sequence. If @p seq_id is not an empty string,
+        the relation of the given scan being the final scan of the specified
+        sequence is additionally checked.
+    """
+    maybe_seq_id = is_swift_scan(path)
+    if maybe_seq_id is None:
+        # Not a Swift scan
+        return False
+
+    if seq_id != "" and maybe_seq_id != seq_id:
+        # Sequence ID does not match
+        return False
+
+    if os.path.isdir(path):
+        return os.path.exists(os.path.normpath(os.path.join(path, SWIFT_HASH_LIST)))
+    else:
+        return ole_contains_stream(path, SWIFT_HASH_LIST)
+
+def find_last_scan_in_sequence(root_path: str, seq_id: str) -> typing.Optional[str]:
+    """ Iterates over contents of @p root_path and returns the
+        name (= path relative to @p root_path) of the final scan
+        belonging to a given Swift sequence, if such scan is contained in @p root_path.
+        If no such scan is found, `None` is returned.
+    """
+    if not os.path.isdir(root_path):
+        logger.warning("Root path '%s' is not a folder!", root_path)
+        return None
+    for item in os.listdir(root_path):
+        item_path = os.path.join(root_path, item)
+        if is_last_scan_in_swift_seq(item_path, seq_id):
+            logger.debug("Last scan in sequence: '%s'", item)
+            return item
+    return None
 
 
 def scan_count(path, check_any=False) -> int:
@@ -384,11 +453,11 @@ def scan_count(path, check_any=False) -> int:
                     return n_hashed_scans
 
         return n_hashed_scans
-    except:
+    except Exception:
         return 0
 
 
-def is_hashed_scan(path):
+def is_hashed_scan(path) -> bool:
     is_scan = False
 
     if not os.path.isdir(path):
@@ -406,21 +475,33 @@ def is_hashed_scan(path):
             logger.warning("Error when scanning folder contents: {0}".format(str(e)))
     return is_scan
 
+def is_scan_v1_ole(scan: olefile.OleFileIO) -> bool:
+    return scan.exists(MAIN_PARAM_STREAM) and scan.exists(SCANS_SUBFOLDER)
+
+def is_scan_v2_ole(scan: olefile.OleFileIO) -> bool:
+    return scan.exists(LSDATAV2_VERSION_FILE) and scan.exists(LSDATAV2_SCANDATA_SUBFOLDER)
+
+def is_scan_v1_folder(path: str) -> bool:
+    return os.path.exists(os.path.join(path, MAIN_PARAM_STREAM)) \
+        and os.path.exists(os.path.join(path, SCANS_SUBFOLDER))
+
+def is_scan_v2_folder(path: str) -> bool:
+    return os.path.exists(os.path.join(path, LSDATAV2_VERSION_FILE)) \
+        and os.path.exists(os.path.join(path, LSDATAV2_SCANDATA_SUBFOLDER))
 
 def is_scan_folder(path: str) -> bool:
     if not os.path.isdir(path):
         return False
 
     try:
-        return any(fname == MAIN_PARAM_STREAM for fname in os.listdir(path)) \
-               and any(fname == SCANS_SUBFOLDER for fname in os.listdir(path))
+        return is_scan_v1_folder(path) or is_scan_v2_folder(path)
     except EnvironmentError as e:
         logger.warning("Error when scanning folder contents: {0}".format(str(e)))
     return False
 
 
 def is_hashing_file(path):
-    return path in [SUM_LEVEL1, SUM_LEVEL2, SIGNATURE]
+    return (path in [SUM_LEVEL1, SUM_LEVEL2, SIGNATURE]) or Sfm.is_hash(path)
 
 
 def is_valid_key(path):
@@ -459,11 +540,12 @@ class VerifierThread(QtCore.QThread):
     finished = QtCore.pyqtSignal()
     result_changed = QtCore.pyqtSignal(VerificationResult)
 
-    def __init__(self, root_path, key_path, parent=None):
+    def __init__(self, root_path, key_path, selected_scans: list = None, parent=None):
         super(VerifierThread, self).__init__(parent)
         self._signer = None
         self._root_path = root_path
         self._key_path = key_path
+        self._selected_scans = selected_scans
 
         # scan names and their overall hashes
         self._swift_scan_hashes = {}
@@ -482,6 +564,11 @@ class VerifierThread(QtCore.QThread):
         # scan plan project
         if does_spl_exist(self._root_path):
             self.verify_scanplan_project()
+
+        # Freestyle raw scans
+        elif Sfm.is_folder(self._root_path) or Sfm.is_file(self._root_path):
+            self.verify_sfm()
+
         # scans folder
         else:
             self.verify_scans()  # emits scan_checked for every checked folder
@@ -518,6 +605,10 @@ class VerifierThread(QtCore.QThread):
 
             self.scan_checked.emit(item_result)
 
+    def verify_sfm(self):
+        for scan in Sfm.files(self._root_path):
+            self.scan_checked.emit(Sfm.verify(scan, self._signer))
+
     def verify_scans(self):
         logger.debug("Verifying scans in '{0}'".format(self._root_path))
         try:
@@ -526,10 +617,15 @@ class VerifierThread(QtCore.QThread):
                 self.verify_scan(self._root_path)
             else:
                 # Verify directory with Scans
-                for item in os.listdir(self._root_path):
+                selected_items = self._selected_scans
+                if selected_items is None:
+                    selected_items = os.listdir(self._root_path)
+                for item in selected_items:
+                    logger.debug("sub-item: %s", item)
                     sub_path = os.path.join(self._root_path, item)
                     if os.path.isdir(sub_path) and not is_scan_folder(sub_path):
                         # folder, but not a scan
+                        logger.debug("folder, but not a scan: %s",  sub_path)
                         continue
                     self.verify_scan(sub_path)
 
@@ -683,7 +779,7 @@ class VerifierThread(QtCore.QThread):
             if ole is not None:
                 ole.close()
 
-    def verify_hash_single_scan(self, scan):
+    def verify_hash_single_scan(self, scan) -> dict:
         hash_lines = []
         total_hash_read = ''
         is_ole = False
@@ -701,7 +797,6 @@ class VerifierThread(QtCore.QThread):
                 raise TypeError("A string or a open OleFileIO object is expected!")
         except EnvironmentError as ex:
             logger.warning("Error: {}".format(ex))
-            pass
 
         hash_status = {'total_hash_calc': '',
                        'total_hash_read': total_hash_read,
@@ -759,6 +854,28 @@ class VerifierThread(QtCore.QThread):
                 file_status.hash_ok = False
                 hash_status['total_hash_status'] = HashResult.HASHED_FILE_MISSING
             hash_status['file_status'][filename] = file_status
+
+        if isinstance(scan, str) and is_scan_v2_folder(scan):
+            """ In addition to the files listed in `SUM_LEVEL1`, we check that
+                a file named like the scan folder exists in this folder and is empty.
+                In data format v2, this file is not included in `SUM_LEVEL1` anymore.
+            """
+            _, fls_file_name = os.path.split(scan)
+            file_status = HashedFileInfo(scan_path=scan,
+                            relative_path=fls_file_name,
+                            is_dir=False,
+                            hash_read="EXPECTED_TO_BE_EMPTY")
+            if os.path.exists(os.path.join(scan, fls_file_name)):
+                file_status.file_present = True
+                if len(open(os.path.join(scan, fls_file_name)).read()) == 0:
+                    file_status.hash_calc = "FOUND_EMPTY_OK"
+                    file_status.hash_ok = True
+                else:
+                    file_status.hash_calc = "FOUND_NOT_EMPTY"
+                    file_hash_mismatch = True
+            else:
+                hash_status['total_hash_status'] = HashResult.HASHED_FILE_MISSING
+            hash_status['file_status'][fls_file_name] = file_status
 
         total_hash_calc = total_scan_hasher.hexdigest().upper()
         hash_status['total_hash_calc'] = total_hash_calc
@@ -822,8 +939,21 @@ class VerifierThread(QtCore.QThread):
             if hash_file_data is None:
                 return SignatureResult.NO_HASH_FILE
 
+            digest = None
+            if (isinstance(scan, str) and is_scan_v1_folder(scan)) \
+                    or (isinstance(scan, olefile.OleFileIO) and is_scan_v1_ole(scan)):
+                logger.debug("Will check signature on a scan data format V1")
+                digest = cryptoSHA.new()
+            elif (isinstance(scan, str) and is_scan_v2_folder(scan)) \
+                    or (isinstance(scan, olefile.OleFileIO) and is_scan_v2_ole(scan)):
+                logger.debug("Will check signature on a scan data format V2")
+                digest = cryptoSHAv2.new()
+
+            if digest is None:
+                logger.error("Skip signature verification: Unknown scan format")
+                return SignatureResult.HASH_CALC_FAILED
+
             # Verify Signature
-            digest = cryptoSHA.new()
             digest.update(hash_file_data)
             if self._signer.verify(digest, signature):
                 return SignatureResult.PASSED

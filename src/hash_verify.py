@@ -31,9 +31,6 @@ from verify.verify import Verify
 from version import __version__
 
 LOG_FOLDER = os.path.join(user_data_dir("ScanVerificationTool", "FARO"), 'logs')
-KEY_FOLDER = os.path.normpath('./keys')
-KEY_FILE = 'FARO_scan_signature_key.pem'
-KEY_PATH = os.path.join(KEY_FOLDER, KEY_FILE)
 
 log_modules = ['verify', 'verification_algorithms', "report_dialog", "file_system_hash_model"]
 logger = logging.getLogger(__name__)
@@ -112,7 +109,7 @@ if __name__ == '__main__':
     app.setOrganizationDomain("faro.com")
     app.setApplicationName("Scan Verification Tool")
 
-    w = Verify(app, key_path=KEY_PATH, version=__version__)
+    w = Verify(app, version=__version__)
     w.show()
     w.check_update()
     app.exec_()

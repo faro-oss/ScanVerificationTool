@@ -19,6 +19,7 @@ from PyQt5.QtCore import Qt
 
 from .functions import *
 from .verification_algorithms import *
+from .sfm import *
 
 HDR_NAME = 0
 HDR_DATE = 1
@@ -136,6 +137,8 @@ class FileSystemHashModel(QtWidgets.QFileSystemModel):
             if result.hash_result == HashResult.PASSED and \
                     result.sign_result == SignatureResult.PASSED:
                 tooltip = "Hash and Signature validation PASSED"
+            elif Sfm.is_file(result.scan_path):
+                tooltip = "Verification of Freestyle recording failed"
             else:
                 tooltip = "Failed validation. For more information, see the report."
 
@@ -240,6 +243,8 @@ class FileSystemHashModel(QtWidgets.QFileSystemModel):
                                 ret_icon = self._icons['failed']
                         elif isinstance(file_status, VerificationResult):
                             ret_icon = self.get_project_icon(file_status)
+                    elif Sfm.is_hash(index_path):
+                        ret_icon = self._icons['cert']
                 return ret_icon
 
             elif role in [Qt.StatusTipRole, Qt.ToolTipRole]:
@@ -265,6 +270,9 @@ class FileSystemHashModel(QtWidgets.QFileSystemModel):
                                 tooltip = "File Hash FAILED!"
                         elif isinstance(file_status, VerificationResult):
                             tooltip = self.get_project_tooltip(file_status)
+                    elif Sfm.is_hash(index_path):
+                        tooltip = "Freestyle Certificate file"
+
                 return tooltip
             else:
                 return None

@@ -19,6 +19,7 @@ import subprocess
 import os
 from threading import Lock
 from .version_parser import Version
+from .key_management import KEY_PATH, KEY_PATH_V2
 
 from PyQt5 import QtGui
 from PyQt5.QtCore import Qt, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
@@ -26,6 +27,7 @@ from PyQt5.QtCore import Qt, QSettings, PYQT_VERSION_STR, QT_VERSION_STR
 from ui_gen.ui_layout import Ui_MainWindow
 from .file_system_hash_model import FileSystemHashModel, HDR_NAME, HDR_DATE, HDR_STATUS
 from .functions import *
+from .sfm import *
 from .report_dialog import ReportDialog
 from .verification_algorithms import *
 
@@ -61,7 +63,7 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
     open_key_request = QtCore.pyqtSignal()
     key_invalid = QtCore.pyqtSignal()
 
-    def __init__(self, app, key_path="", version="0.0.0.0"):
+    def __init__(self, app, key_path=KEY_PATH, version="0.0.0.0"):
         QtWidgets.QMainWindow.__init__(self)
         self._is_scan_plan = False
         self._app = app
@@ -167,11 +169,11 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
             self.lineEdit_expectedHash_setText(text)
             return
 
-        if self.current_verification_result is not None:
-            if isinstance(self.current_verification_result, VerificationResult):
-                if self.current_verification_result.is_scanplan_project:
-                    self.current_verification_result.expected_hash = str(text)
-                    self.set_current_project(self.current_verification_result)
+        if self.current_verification_result is not None \
+                and isinstance(self.current_verification_result, VerificationResult) \
+                and self.current_verification_result.is_scanplan_project:
+            self.current_verification_result.expected_hash = str(text)
+            self.set_current_project(self.current_verification_result)
 
     def __set_root_path(self, root_path):
         self.set_current_project(None)
@@ -312,14 +314,29 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
             if does_spl_exist(selected_path):
                 self._selected_path = selected_path
                 menu.addAction(self.check_here_scanplan_action)
+            # Freestyle Verify Action
+            elif Sfm.is_folder(selected_path):
+                self._selected_path = selected_path
+                #self.verification_report.setEnabled(True)
+                #self.btn_show_report.setEnabled(True)
+                menu.addAction(self.verification_report)
+
             # Scan Verify Action
             elif is_scan_verifyable(selected_path):
                 self._selected_path = selected_path
                 menu.addAction(self.check_here_action)
+                if is_swift_scan(selected_path) is not None:
+                    menu.addAction(self.check_swift_sequence_action)
 
             # Show Report Action
             if self.folder_tree.model().data(index, FileSystemHashModel.HashDataRole) is not None:
                 menu.addAction(self.verification_report)
+
+        elif Sfm.is_file(selected_path):
+            self._selected_path = selected_path
+            #self.verification_report.setEnabled(True)
+            #self.btn_show_report.setEnabled(True)
+            menu.addAction(self.verification_report)
 
         elif is_hashed_scan(selected_path):
             # Scan Verify Action for ole-file
@@ -419,6 +436,8 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
             # todo: save expected hash and reuse it?
             pass
 
+        elif Sfm.is_folder(new_root) or Sfm.is_file(new_root):
+            pass
         else:
             ''' Handle Focus Scans '''
             # save the number for the (TODO:) progress calculation
@@ -428,7 +447,7 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
                 message = "There are no sub folders with hashed scans in the selected folder: \n'{0}'".format(new_root)
                 logger.info(message)
                 retval = show_message(self, "The selected folder does not contain any signed FARO Focus Scans\n" +
-                                      "or a ScanPlan Project.",
+                                      ", Freestyle raw scans or a ScanPlan Project.",
                                       icon=QtWidgets.QMessageBox.Information,
                                       additional="Do you want to look for another path?", yesno=True)
                 if retval == QtWidgets.QMessageBox.Yes:
@@ -488,22 +507,49 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
 
         self.open_root(False, self._selected_path)
 
-        """
-        self.current_root.setText(self._selected_path)
-        self._root_index = self.folder_tree.model().setRootPath(self._selected_path)
-        self.folder_tree.setRootIndex(self._root_index)
-
-        self._root_path = self._selected_path
-        self.statusbar.showMessage("Changed root folder to '{0}'".format(self._selected_path), STATUSBAR_MSG_DURATION)
-
-        # schedule the scan verification process:
-        self._start_checker_thread()
+    def check_swift_sequence(self):
+        """ pyQt slot
         """
 
-    def _start_checker_thread(self):
         with self._working_lock:
             if self._working:
-                logger.debug("Won't start the check worker thread because another job s running")
+                logger.debug("Skip Swift sequence verification because another job is running")
+
+        logger.debug("check_swift_sequence on path '%s'", self._selected_path)
+        maybe_seq_id = is_swift_scan(self._selected_path)
+        if maybe_seq_id is None:
+            logger.debug("Path is not a swift scan")
+            return
+
+        logger.debug("Path is a swift scan. Seq. ID: %s",  maybe_seq_id)
+        last_scan = find_last_scan_in_sequence(os.path.dirname(self._selected_path), maybe_seq_id)
+        logger.debug("Last scan of the sequence: '%s'",  last_scan)
+        if last_scan is None:
+            show_message(self,
+                         message="The last scan of the Swift sequence was not found "
+                            + "in the same folder as the selected scan.",
+                         additional="The verification will be aborted.",
+                         yesno=False)
+            return
+
+        message = "Verifying Swift sequence ending with {}".format(last_scan)
+        logger.info(message)
+        self.statusbar.showMessage(message, STATUSBAR_MSG_DURATION)
+
+        # Schedule the verification process of the last scan in a sequence.
+        # This will implicitly verify other scans of the sequence referenced by the last one.
+        self._start_checker_thread(preselected_scans=[last_scan])
+        logger.debug("Scheduled Swift sequence verification")
+
+    def _start_checker_thread(self, preselected_scans: list = None):
+        """ Starts an asynchronous job that verifies the integrity of
+            scans within self._root_path.
+            If @p preselected_scans is an initialized list of scan names,
+            only these scans will ve verified. Otherwise, all scans in self._root_path.
+        """
+        with self._working_lock:
+            if self._working:
+                logger.debug("Won't start the check worker thread because another job is running")
                 return
 
             key_path = self._key_path
@@ -524,7 +570,7 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
             self._set_working_status(True)
             self._working = True
 
-            self._worker = VerifierThread(self._root_path, self._key_path)
+            self._worker = VerifierThread(self._root_path, self._key_path, preselected_scans)
             self._worker.setObjectName("VerifierThread")
             self._worker.scan_checked.connect(self.folder_checked)
             self._worker.finished.connect(self.all_folders_checked)
@@ -584,11 +630,11 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
 
         if self._root_path == check_status.scan_path and check_status.is_swift_scan:
             show_message(self,
-                         "The processed scan seems to belong to a Focus Swift sequence. "
-                         + "No other scan of the sequence has been verified along with this one, "
-                         + "so verification status will be set to FAILED.",
-                         additional="Please navigate one folder up and verify the parent folder to "
-                                    + "include all scans of the sequence.",
+                         message="The processed scan seems to belong to a Focus Swift sequence. "
+                            + "No other scan of the sequence has been verified along with this one, "
+                            + "so verification status will be set to FAILED.",
+                         additional="You can verify all scans in a sequence if you "
+                            + "open the scan's parent folder and use \"Tools -> Verify Focus Swift Sequence\" there.",
                          yesno=False)
 
         # Select Project only for ScanPlanProjects or single scans
@@ -743,53 +789,10 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
             # Re-Select the path, so the actions are up to date
             self.tree_selection_changed(old_root_index, None)
 
-    def tree_selection_changed(self, selection, old_selection):
-        self._selected_path = ""
-        self.check_here_scanplan_action.setEnabled(False)
-        self.check_here_action.setEnabled(False)
-
-        # Find selected index
-        index = None
-        if isinstance(selection, QtCore.QItemSelection):
-            if not selection.isEmpty():
-                index = selection.indexes()[0]
-        elif isinstance(selection, QtCore.QModelIndex):
-            index = selection
-
-        if index is None:
-            return
-
-        with self._working_lock:
-            if self._working:
-                logger.debug("Skipped the click on the tree because data is being processed now")
-                self.set_current_project(None)
-                return
-
-        logger.debug("Processing a click on the path '%s'", self.folder_tree.model().filePath(index))
-        content = self.folder_tree.model().data(index, FileSystemHashModel.HashDataRole)
-
-        if content is None:
-            # TODO: update the GUI with "Unknown" contents
-            logger.debug("Unknown status")
-            self._set_scan_plan_project(False)
-            self.set_current_project(None)
-        else:
-            if isinstance(content, VerificationResult):
-                self.set_current_project(content)
-
-            else:
-                # Get Project the file belong to
-                result = self.folder_tree.model().get_verification_result_from_index(index)
-                self.set_current_project(result)
-
-        # Enable Actions
-        selected_path = os.path.normpath(str(self.folder_tree.model().filePath(index)))
-        is_dir = os.path.isdir(selected_path)
-
-        # Set Verify/Reverify
-        self.check_is_verify(self._root_path == "" or self._root_path != selected_path)
-
-        if is_dir:
+    def set_actions_for_path(self, selected_path):
+        """ Enable/disable actions"""
+        self.check_swift_sequence_action.setEnabled(False) # only enable if a swift scan is selected
+        if  os.path.isdir(selected_path):
             if does_spl_exist(selected_path):
                 self._selected_path = selected_path
                 self.check_here_scanplan_action.setEnabled(True)
@@ -809,6 +812,66 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
             self.check_here_scanplan_action.setEnabled(True)
             self.check_here_action.setEnabled(True)
             self.check_root_button.setEnabled(True)
+            self.check_swift_sequence_action.setEnabled(is_swift_scan(selected_path) is not None)
+
+    def tree_unselected(self):
+        # Select the currently displayed folder for (re-)verification if applicable
+        displayed_root = os.path.normpath(self.folder_tree.model().rootPath())
+        displayed_root_match = (displayed_root == self._root_path)
+        self.check_is_verify(not displayed_root_match)
+        if displayed_root_match or scan_count(displayed_root, check_any=True):
+            self._selected_path = displayed_root
+            self.selected_project.setText(displayed_root)
+            self.check_root_button.setEnabled(True)
+            self.set_actions_for_path(displayed_root)
+
+    def tree_selection_changed(self, new_selected, unselected):
+        with self._working_lock:
+            if self._working:
+                logger.debug("Skipped the click on the tree because data is being processed now")
+                return
+
+        self._selected_path = ""
+        self.check_here_scanplan_action.setEnabled(False)
+        self.check_here_action.setEnabled(False)
+
+        # Find selected index
+        index = None
+        if isinstance(new_selected, QtCore.QItemSelection):
+            if not new_selected.isEmpty():
+                index = new_selected.indexes()[0]
+            else:
+                logger.debug("No item is selected")
+        elif isinstance(new_selected, QtCore.QModelIndex):
+            index = new_selected
+
+        logger.debug("self._root_path when selection changed: '%s'", self._root_path)
+        if index is None:
+            # Nothing is selected.
+            self.tree_unselected()
+            return
+
+        selected_path = os.path.normpath(str(self.folder_tree.model().filePath(index)))
+        logger.debug("Processing a click on the path '%s'", selected_path)
+        content = self.folder_tree.model().data(index, FileSystemHashModel.HashDataRole)
+
+        if content is None:
+            # TODO: update the GUI with "Unknown" contents
+            logger.debug("Unknown status")
+            self._set_scan_plan_project(False)
+            self.set_current_project(None)
+        else:
+            if isinstance(content, VerificationResult):
+                self.set_current_project(content)
+            else:
+                # Get Project the file belong to
+                result = self.folder_tree.model().get_verification_result_from_index(index)
+                self.set_current_project(result)
+
+        # Set button label "Verify" or "Reverify" appropriately
+        self.check_is_verify(self._root_path == "" or self._root_path != selected_path)
+        self.set_actions_for_path(selected_path)
+
 
     def btn_show_report_clicked(self):
         self.show_report()
@@ -883,8 +946,10 @@ class Verify(QtWidgets.QMainWindow, Ui_MainWindow):
                         self.statusbar.showMessage("Release to drop ScanPlan Project")
                     elif is_scan_verifyable(folder):
                         self.statusbar.showMessage("Release to drop folder with Focus Scans here")
+                    elif Sfm.is_folder(folder) or Sfm.is_file(folder):
+                        self.statusbar.showMessage("Release to drop folder with Freestyle Scans here")
                     else:
-                        self.show_statusbar_message("Please drop a folder containing Focus Scans or a ScanPlan Project")
+                        self.show_statusbar_message("Please drop a folder containing Focus Scans, Freestyle Scans or a ScanPlan Project")
                         e.ignore()
                         continue
 

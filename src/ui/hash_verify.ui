@@ -54,7 +54,7 @@
     <item>
      <widget class="QStackedWidget" name="stackedWidget">
       <property name="currentIndex">
-       <number>1</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="DropPage">
        <property name="acceptDrops">
@@ -299,18 +299,18 @@ QPushButton:disabled
                <widget class="QLabel" name="label_faro_logo">
                 <property name="minimumSize">
                  <size>
-                  <width>132</width>
-                  <height>48</height>
+                  <width>152</width>
+                  <height>41</height>
                  </size>
                 </property>
                 <property name="maximumSize">
                  <size>
-                  <width>132</width>
-                  <height>16777215</height>
+                  <width>152</width>
+                  <height>41</height>
                  </size>
                 </property>
                 <property name="styleSheet">
-                 <string notr="true">border-image: url('images/FARO_264x96_gray.png');</string>
+                 <string notr="true">border-image: url('images/Logo_FARO_Blue_MinSize.png');</string>
                 </property>
                 <property name="text">
                  <string/>
@@ -1448,6 +1448,9 @@ QHeaderView {
               <property name="autoScrollMargin">
                <number>16</number>
               </property>
+              <property name="selectionMode">
+               <enum>QAbstractItemView::ExtendedSelection</enum>
+              </property>
               <property name="verticalScrollMode">
                <enum>QAbstractItemView::ScrollPerPixel</enum>
               </property>
@@ -1728,6 +1731,7 @@ margin-bottom:3;</string>
      <string>&amp;Tools</string>
     </property>
     <addaction name="check_here_action"/>
+    <addaction name="check_swift_sequence_action"/>
     <addaction name="check_here_scanplan_action"/>
     <addaction name="verification_report"/>
     <addaction name="separator"/>
@@ -1853,6 +1857,11 @@ margin-bottom:3;</string>
    </property>
    <property name="shortcut">
     <string>F1</string>
+   </property>
+  </action>
+  <action name="check_swift_sequence_action">
+   <property name="text">
+    <string>Verify Focus Swift Sequence</string>
    </property>
   </action>
  </widget>
@@ -2050,7 +2059,7 @@ margin-bottom:3;</string>
     </hint>
    </hints>
   </connection>
- <connection>
+  <connection>
    <sender>show_manual_action</sender>
    <signal>triggered()</signal>
    <receiver>MainWindow</receiver>
@@ -2178,6 +2187,22 @@ margin-bottom:3;</string>
     </hint>
    </hints>
   </connection>
+  <connection>
+   <sender>check_swift_sequence_action</sender>
+   <signal>triggered()</signal>
+   <receiver>MainWindow</receiver>
+   <slot>check_swift_sequence()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>528</x>
+     <y>316</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>528</x>
+     <y>316</y>
+    </hint>
+   </hints>
+  </connection>
  </connections>
  <slots>
   <signal>open_scan_request()</signal>
@@ -2194,5 +2219,6 @@ margin-bottom:3;</string>
   <slot>warn_invalid_key()</slot>
   <slot>init_root()</slot>
   <slot>about_dialog()</slot>
+  <slot>check_swift_sequence()</slot>
  </slots>
 </ui>

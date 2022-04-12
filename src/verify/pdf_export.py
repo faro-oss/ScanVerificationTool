@@ -93,8 +93,9 @@ class PdfExporter:
         self.print_footer(page, pages)
 
     def print_header(self):
-        # Print Image
-        img_path = self.get_image("faro-logo-blue.png")
+        """ Adds a header bar with the logos to the report page.
+        """
+        img_path = self.get_image("FARO_logo_Blue_clipped.png")
         self.pdf.image(img_path, x=15, y=17, w=48, h=0, type='png', link='')
 
         img_path = self.get_image("verify_trans.png")
